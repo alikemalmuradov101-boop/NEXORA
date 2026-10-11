@@ -14,9 +14,15 @@ type Listing = {
   status: string;
   category: string;
   created_at: string;
-};
-
-type Tab = "catalog" | "sell" | "my" | "profile" | "purchases";
+};   
+  
+type Tab =
+  | "catalog"
+  | "sell"
+  | "my"
+  | "profile"
+  | "purchases"
+  | "admin";
 
 const categories = [
   "Все категории",
@@ -31,6 +37,7 @@ const categories = [
 
 export default function Home() {
   const [user, setUser] = useState<any>(null);
+  const [isOwner, setIsOwner] = useState(false);
   const [ready, setReady] = useState(false);
   const [tab, setTab] = useState<Tab>("catalog");
   const [listings, setListings] = useState<Listing[]>([]);
@@ -61,6 +68,13 @@ export default function Home() {
     const { data: listener } = supabase.auth.onAuthStateChange(
       (_event, session) => {
         setUser(session?.user ?? null);
+        if (data.session?.user) {
+  const { data: ownerStatus, error } = await supabase.rpc("is_nexora_owner");
+
+  setIsOwner(!error && ownerStatus === true);
+} else {
+  setIsOwner(false);
+        }
         setReady(true);
       }
     );
