@@ -1,91 +1,204 @@
+"use client";
+
+import { useState } from "react";
+import { supabase } from "../lib/supabase";
+
 export default function Home() {
+const [mode, setMode] = useState<"login" | "register">("register");
+const [email, setEmail] = useState("");
+const [password, setPassword] = useState("");
+const [username, setUsername] = useState("");
+const [message, setMessage] = useState("");
+const [loading, setLoading] = useState(false);
+
+async function handleAuth(e: React.FormEvent<HTMLFormElement>) {
+e.preventDefault();
+setMessage("");
+setLoading(true);
+
+try {
+  if (mode === "register") {
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: { username },
+      },
+    });
+
+    if (error) throw error;
+
+    if (data.user) {
+      setMessage(
+        data.session
+          ? "Аккаунт создан! Вы вошли в NEXORA."
+          : "Аккаунт создан! Проверьте почту и подтвердите Email."
+      );
+    }
+  } else {
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (error) throw error;
+    setMessage("Вы успешно вошли в NEXORA!");
+  }
+} catch (error) {
+  setMessage(
+    error instanceof Error ? error.message : "Произошла ошибка."
+  );
+} finally {
+  setLoading(false);
+}
+
+}
+
 return (
 <main style={{
 minHeight: "100vh",
 background: "linear-gradient(135deg, #050816, #101b3d, #061c2c)",
 color: "white",
 fontFamily: "Arial, sans-serif",
-padding: "40px 20px",
+padding: "24px",
+display: "flex",
+alignItems: "center",
+justifyContent: "center",
 boxSizing: "border-box"
 }}>
-<header style={{
-maxWidth: "1000px",
-margin: "0 auto",
-display: "flex",
-justifyContent: "space-between",
-alignItems: "center",
-flexWrap: "wrap",
-gap: "16px"
+<section style={{
+width: "100%",
+maxWidth: "420px",
+padding: "32px",
+border: "1px solid #263d65",
+borderRadius: "20px",
+background: "rgba(12, 25, 50, 0.92)",
+boxSizing: "border-box"
 }}>
-<h1 style={{ color: "#55d8ff", letterSpacing: "3px" }}>NEXORA</h1>
-<nav>
-<a href="#features" style={{ color: "white", marginRight: "18px" }}>Возможности</a>
-<a href="#about" style={{ color: "white" }}>О проекте</a>
-</nav>
-</header>
+<h1 style={{
+textAlign: "center",
+color: "#55d8ff",
+letterSpacing: "4px",
+fontSize: "34px"
+}}>NEXORA</h1>
 
-  <section style={{
-    maxWidth: "1000px",
-    margin: "100px auto 70px",
-    textAlign: "center"
-  }}>
-    <p style={{ color: "#55d8ff", letterSpacing: "4px" }}>
-      НОВОЕ ПРОСТРАНСТВО ВОЗМОЖНОСТЕЙ
-    </p>
-    <h2 style={{ fontSize: "clamp(40px, 8vw, 76px)", margin: "20px 0" }}>
+    <p style={{ textAlign: "center", color: "#b8c5df" }}>
       Твой мир. Твои правила.
-    </h2>
-    <p style={{ color: "#b8c5df", fontSize: "18px", lineHeight: 1.8 }}>
-      NEXORA — современная цифровая платформа для новых идей,
-      проектов и возможностей.
     </p>
-    <a href="#features" style={{
-      display: "inline-block",
-      marginTop: "24px",
-      padding: "15px 30px",
-      background: "#39cfff",
-      color: "#06111f",
-      borderRadius: "12px",
-      fontWeight: "bold",
-      textDecoration: "none"
-    }}>
-      Исследовать
-    </a>
-  </section>
 
-  <section id="features" style={{
-    maxWidth: "1000px",
-    margin: "0 auto",
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-    gap: "20px"
-  }}>
-    {[
-      ["🚀", "Новые возможности", "Открывай новые идеи и развивай свои проекты."],
-      ["🌐", "Единая платформа", "Удобное пространство для цифровых решений."],
-      ["🔒", "Безопасность", "Мы стремимся сделать работу простой и надёжной."]
-    ].map(([icon, title, description]) => (
-      <article key={title} style={{
-        padding: "26px",
+    <div style={{ display: "flex", gap: "10px", margin: "28px 0" }}>
+      <button type="button" onClick={() => {
+        setMode("register");
+        setMessage("");
+      }} style={{
+        flex: 1, padding: "12px", borderRadius: "10px",
         border: "1px solid #263d65",
-        borderRadius: "18px",
-        background: "rgba(20, 37, 70, 0.65)"
-      }}>
-        <div style={{ fontSize: "32px" }}>{icon}</div>
-        <h3>{title}</h3>
-        <p style={{ color: "#b8c5df", lineHeight: 1.7 }}>{description}</p>
-      </article>
-    ))}
-  </section>
+        background: mode === "register" ? "#39cfff" : "#101b3d",
+        color: mode === "register" ? "#06111f" : "white",
+        fontWeight: "bold"
+      }}>Регистрация</button>
 
-  <footer id="about" style={{
-    textAlign: "center",
-    marginTop: "80px",
-    color: "#8294b6"
-  }}>
-    © 2026 NEXORA. Все права защищены.
-  </footer>
+      <button type="button" onClick={() => {
+        setMode("login");
+        setMessage("");
+      }} style={{
+        flex: 1, padding: "12px", borderRadius: "10px",
+        border: "1px solid #263d65",
+        background: mode === "login" ? "#39cfff" : "#101b3d",
+        color: mode === "login" ? "#06111f" : "white",
+        fontWeight: "bold"
+      }}>Вход</button>
+    </div>
+
+    <form onSubmit={handleAuth}>
+      {mode === "register" && (
+        <label style={{ display: "block", marginBottom: "16px" }}>
+          Имя пользователя
+          <input
+            required
+            minLength={3}
+            maxLength={24}
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            placeholder="Придумайте имя"
+            style={inputStyle}
+          />
+        </label>
+      )}
+
+      <label style={{ display: "block", marginBottom: "16px" }}>
+        Email
+        <input
+          required
+          type="email"
+          autoComplete="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="you@example.com"
+          style={inputStyle}
+        />
+      </label>
+
+      <label style={{ display: "block", marginBottom: "20px" }}>
+        Пароль
+        <input
+          required
+          type="password"
+          minLength={6}
+          autoComplete={mode === "register" ? "new-password" : "current-password"}
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="Минимум 6 символов"
+          style={inputStyle}
+        />
+      </label>
+
+      <button disabled={loading} type="submit" style={{
+        width: "100%",
+        padding: "15px",
+        border: "none",
+        borderRadius: "10px",
+        background: "#39cfff",
+        color: "#06111f",
+        fontWeight: "bold",
+        fontSize: "16px",
+        opacity: loading ? 0.6 : 1
+      }}>
+        {loading ? "Подождите..." : mode === "register" ? "Создать аккаунт" : "Войти"}
+      </button>
+    </form>
+
+    {message && (
+      <p role="status" style={{
+        marginTop: "20px",
+        color: message.includes("ошиб") || message.includes("Invalid")
+          ? "#ff9b9b" : "#55d8ff",
+        overflowWrap: "anywhere",
+        lineHeight: 1.6
+      }}>{message}</p>
+    )}
+
+    <p style={{
+      textAlign: "center",
+      color: "#8294b6",
+      fontSize: "12px",
+      marginTop: "28px"
+    }}>© 2026 NEXORA</p>
+  </section>
 </main>
 
 );
 }
+
+const inputStyle: React.CSSProperties = {
+display: "block",
+width: "100%",
+boxSizing: "border-box",
+marginTop: "8px",
+padding: "13px",
+borderRadius: "10px",
+border: "1px solid #263d65",
+background: "#050816",
+color: "white",
+outline: "none"
+};
