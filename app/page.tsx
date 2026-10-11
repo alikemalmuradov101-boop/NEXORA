@@ -518,7 +518,7 @@ export default function Home() {
                 <div><span>На модерации</span><strong>{adminListings.length}</strong></div>
                 <div><span>Опубликовано</span><strong>{listings.filter(x => x.status === "approved").length}</strong></div>
               </div>
-              <div className="section-heading"><div><h2>Очередь модерации</h2><p>Проверь объявление перед публикацией.</p></div><button className="secondary" onClick={() => void loadAdminListings()}>↻ Обновить</button></div «»
+              <div className="section-heading"><div><h2>Очередь модерации</h2><p>Проверь объявление перед публикацией.</p></div><button className="secondary" onClick={() => void loadAdminListings()}>↻ Обновить</button></div>
 
           {adminLoading ? (
             <div className="empty">Загружаем объявления...</div>
