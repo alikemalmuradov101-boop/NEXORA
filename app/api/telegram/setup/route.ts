@@ -18,7 +18,8 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const webhookUrl = new URL("/api/telegram/webhook", request.url).toString();
+  const origin = new URL(request.url).origin;
+  const webhookUrl = new URL("/api/telegram/webhook", origin).toString();
   try {
     const result = await callTelegramApi<{ url: string; pending_update_count: number }>("setWebhook", {
       url: webhookUrl,
@@ -26,7 +27,14 @@ export async function POST(request: NextRequest) {
       allowed_updates: ["message"],
       drop_pending_updates: false,
     });
-    return NextResponse.json({ ok: true, webhookUrl: result.url, pendingUpdates: result.pending_update_count });
+    await callTelegramApi("setChatMenuButton", {
+      menu_button: {
+        type: "web_app",
+        text: "Открыть Древень",
+        web_app: { url: origin },
+      },
+    });
+    return NextResponse.json({ ok: true, webhookUrl: result.url, pendingUpdates: result.pending_update_count, miniAppUrl: origin });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Не удалось установить webhook." },
