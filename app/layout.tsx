@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 
 export const metadata: Metadata = {
   title: "Древень — игровое сообщество",
@@ -14,7 +15,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ru">
-      <body style={{ margin: 0 }}>{children}</body>
+      <body style={{ margin: 0 }}><Script src="https://telegram.org/js/telegram-web-app.js?64" strategy="beforeInteractive" />{children}</body>
     </html>
   );
 }
