@@ -1,719 +1,114 @@
-
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
-import { supabase } from "../lib/supabase";
+import { useState } from "react";
 
-type Listing = {
-  id: string;
-  user_id: string;
-  title: string;
-  description: string | null;
-  price: number | null;
-  currency: string | null;
-  image_url: string | null;
-  status: string;
-  category: string;
-  created_at: string;
-};
-
-type Tab = "catalog" | "sell" | "my" | "profile" | "purchases" | "admin";
-
-const OWNER_ID = "74cdb23e-f5b0-4b41-a18a-55f222d39810";
-
-const categories = [
-  "Программирование",
-  "Дизайн",
-  "Игры",
-  "NFT",
-  "Аккаунты",
-  "Услуги",
-  "Другое",
+const features = [
+  { icon: "🌲", title: "Своё сообщество", text: "Находи игроков, знакомься и собирай команду для совместных игр." },
+  { icon: "⚔️", title: "Игровые события", text: "Идеи для встреч, турниров и дружеских игровых вечеров." },
+  { icon: "🛡️", title: "Порядок и безопасность", text: "Правила сообщества и возможность сообщить о проблеме." },
 ];
 
-const money = (price: number | null) =>
-  new Intl.NumberFormat("ru-RU").format(price ?? 0) + " KZT";
-
 export default function Home() {
-  const [user, setUser] = useState<any>(null);
-  const [ready, setReady] = useState(false);
-  const [isOwner, setIsOwner] = useState(false);
-  const [tab, setTab] = useState<Tab>("catalog");
-  const [listings, setListings] = useState<Listing[]>([]);
-  const [search, setSearch] = useState("");
-  const [category, setCategory] = useState("Все категории");
-  const [authMode, setAuthMode] = useState<"login" | "register">("login");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [message, setMessage] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [price, setPrice] = useState("5000");
-  const [imageUrl, setImageUrl] = useState("");
-  const [newCategory, setNewCategory] = useState("Программирование");
-
-  const [adminListings, setAdminListings] = useState<Listing[]>([]);
-  const [adminLoading, setAdminLoading] = useState(false);
-
-  const loadListings = useCallback(async () => {
-    const { data, error } = await supabase
-      .from("listings")
-      .select("*")
-      .order("created_at", { ascending: false });
-
-    if (error) {
-      setMessage("Не удалось загрузить объявления: " + error.message);
-      return;
-    }
-
-    setListings((data ?? []) as Listing[]);
-  }, []);
-
-  const checkOwner = useCallback(async (currentUser: any) => {
-    if (!currentUser) {
-      setIsOwner(false);
-      return;
-    }
-
-    // Проверяем роль в защищённой таблице, а не только ID в интерфейсе.
-    const { data, error } = await supabase.rpc("is_nexora_owner");
-
-    setIsOwner(
-      !error &&
-      data === true &&
-      currentUser.id === OWNER_ID
-    );
-  }, []);
-
-  const loadAdminListings = useCallback(async () => {
-    setAdminLoading(true);
-
-    const { data, error } = await supabase
-      .from("listings")
-      .select("*")
-      .eq("status", "pending")
-      .order("created_at", { ascending: false });
-
-    if (error) {
-      setMessage("Не удалось загрузить очередь модерации. Проверь политики RLS.");
-    } else {
-      setAdminListings((data ?? []) as Listing[]);
-    }
-
-    setAdminLoading(false);
-  }, []);
-
-  useEffect(() => {
-    let active = true;
-
-    async function initialize() {
-      const { data } = await supabase.auth.getSession();
-      if (!active) return;
-
-      const currentUser = data.session?.user ?? null;
-      setUser(currentUser);
-
-      if (currentUser) {
-        const { data: ownerResult, error } =
-          await supabase.rpc("is_nexora_owner");
-
-        if (active) {
-          setIsOwner(
-            !error &&
-            ownerResult === true &&
-            currentUser.id === OWNER_ID
-          );
-        }
-      } else {
-        setIsOwner(false);
-      }
-
-      if (active) {
-        await loadListings();
-        setReady(true);
-      }
-    }
-
-    void initialize();
-
-    const { data: listener } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        const currentUser = session?.user ?? null;
-        setUser(currentUser);
-
-        if (!currentUser) {
-          setIsOwner(false);
-          setAdminListings([]);
-          setTab("catalog");
-        }
-
-        // Проверку роли выполняем после изменения состояния сессии.
-        if (currentUser) {
-          setTimeout(() => {
-            void checkOwner(currentUser);
-          }, 0);
-        }
-
-        void loadListings();
-      }
-    );
-
-    return () => {
-      active = false;
-      listener.subscription.unsubscribe();
-    };
-  }, [loadListings, checkOwner]);
-
-  useEffect(() => {
-    if (tab === "admin" && isOwner) {
-      void loadAdminListings();
-    }
-  }, [tab, isOwner, loadAdminListings]);
-
-  const visibleListings = useMemo(() => {
-    return listings.filter((item) => {
-      if (item.status !== "approved" && item.user_id !== user?.id) {
-        return false;
-      }
-
-      const query = search.toLowerCase().trim();
-      const matchesSearch =
-        !query ||
-        item.title.toLowerCase().includes(query) ||
-        (item.description ?? "").toLowerCase().includes(query);
-
-      const matchesCategory =
-        category === "Все категории" || item.category === category;
-
-      return matchesSearch && matchesCategory;
-    });
-  }, [listings, search, category, user]);
-
-  const myListings = useMemo(
-    () => listings.filter((item) => item.user_id === user?.id),
-    [listings, user]
-  );
-
-  async function handleAuth(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setBusy(true);
-    setMessage("");
-
-    try {
-      const result =
-        authMode === "register"
-          ? await supabase.auth.signUp({ email, password })
-          : await supabase.auth.signInWithPassword({ email, password });
-
-      if (result.error) throw result.error;
-
-      if (authMode === "register" && !result.data.session) {
-        setMessage("Регистрация создана. Проверь почту, если требуется подтверждение.");
-      } else {
-        setMessage("Вход выполнен.");
-        setUser(result.data.user);
-        await checkOwner(result.data.user);
-        await loadListings();
-      }
-    } catch (error: any) {
-      setMessage(error.message ?? "Не удалось выполнить вход.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleLogout() {
-    const { error } = await supabase.auth.signOut();
-    if (error) {
-      setMessage(error.message);
-      return;
-    }
-
-    setUser(null);
-    setIsOwner(false);
-    setTab("catalog");
-    setMessage("Ты вышел из аккаунта.");
-  }
-
-  async function createListing(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    if (!user) {
-      setMessage("Сначала войди в аккаунт.");
-      setTab("profile");
-      return;
-    }
-
-    if (!title.trim() || !description.trim() || Number(price) < 0) {
-      setMessage("Заполни название, описание и корректную цену.");
-      return;
-    }
-
-    setBusy(true);
-    setMessage("");
-
-    const { error } = await supabase.from("listings").insert({
-      user_id: user.id,
-      title: title.trim(),
-      description: description.trim(),
-      price: Number(price),
-      currency: "KZT",
-      image_url: imageUrl.trim() || null,
-      category: newCategory,
-      status: "pending",
-    });
-
-    setBusy(false);
-
-    if (error) {
-      setMessage("Не удалось отправить объявление: " + error.message);
-      return;
-    }
-
-    setTitle("");
-    setDescription("");
-    setPrice("5000");
-    setImageUrl("");
-    setMessage("Объявление отправлено на модерацию!");
-    await loadListings();
-    setTab("my");
-  }
-
-  async function moderateListing(id: string, status: "approved" | "rejected") {
-    if (!isOwner || user?.id !== OWNER_ID) {
-      setMessage("Нет прав основателя.");
-      return;
-    }
-
-    setBusy(true);
-    setMessage("");
-
-    const { error } = await supabase
-      .from("listings")
-      .update({ status, updated_at: new Date().toISOString() })
-      .eq("id", id)
-      .eq("status", "pending");
-
-    setBusy(false);
-
-    if (error) {
-      setMessage("Не удалось изменить статус. Проверь RLS: " + error.message);
-      return;
-    }
-
-    setMessage(
-      status === "approved"
-        ? "Объявление опубликовано."
-        : "Объявление отклонено."
-    );
-
-    await Promise.all([loadListings(), loadAdminListings()]);
-  }
-
-  function navigate(next: Tab) {
-    if (next === "admin" && !isOwner) {
-      setMessage("Раздел доступен только основателю.");
-      return;
-    }
-
-    setMessage("");
-    setTab(next);
-  }
-
-  if (!ready) {
-    return (
-      <main className="loading">
-        <div className="logo-mark">N</div>
-        <h1>NEXORA</h1>
-        <p>Загружаем твой цифровой мир...</p>
-        <style jsx>{`
-          .loading { min-height:100vh; display:grid; place-content:center;
-            justify-items:center; background:#0b0b12; color:white; }
-          .logo-mark { display:grid; place-items:center; width:64px;height:64px;
-            border-radius:20px;background:linear-gradient(135deg,#8b5cf6,#ec4899);
-            font-size:32px;font-weight:900; }
-          h1 { letter-spacing:7px; }
-          p { color:#9996ad; }
-        `}</style>
-      </main>
-    );
-  }
+  const [menuOpen, setMenuOpen] = useState(false);
 
   return (
-    <main className="site">
+    <main className="site-shell">
       <header className="topbar">
-        <button className="brand" onClick={() => navigate("catalog")}>
-          <span className="brand-icon">N</span>
-          <span>NEXORA<span className="brand-dot">.</span></span>
+        <a className="brand" href="#" aria-label="Древень — главная">
+          <span className="brand-mark">✦</span>
+          <span>ДРЕВЕНЬ<small>ИГРОВОЕ СООБЩЕСТВО</small></span>
+        </a>
+        <button className="menu-toggle" onClick={() => setMenuOpen(!menuOpen)} aria-label="Открыть меню">
+          {menuOpen ? "Закрыть" : "Меню"}
         </button>
-
-        <nav className="desktop-nav">
-          <button className={tab === "catalog" ? "active" : ""} onClick={() => navigate("catalog")}>Каталог</button>
-          <button className={tab === "sell" ? "active" : ""} onClick={() => navigate("sell")}>＋ Продать</button>
-          <button className={tab === "my" ? "active" : ""} onClick={() => navigate("my")}>Мои объявления</button>
-          <button className={tab === "purchases" ? "active" : ""} onClick={() => navigate("purchases")}>Покупки</button>
-          {isOwner && (
-            <button className="owner-nav" onClick={() => navigate("admin")}>
-              ◈ OWNER
-            </button>
-          )}
+        <nav className={menuOpen ? "nav nav-open" : "nav"}>
+          <a href="#about" onClick={() => setMenuOpen(false)}>О сообществе</a>
+          <a href="#features" onClick={() => setMenuOpen(false)}>Возможности</a>
+          <a href="#rules" onClick={() => setMenuOpen(false)}>Правила</a>
         </nav>
-
-        <button className="profile-button" onClick={() => navigate("profile")}>
-          {user ? "Мой профиль" : "Войти"}
-        </button>
+        <a className="top-cta" href="#community">Присоединиться <span>↗</span></a>
       </header>
 
-      <section className="hero">
-        <div className="hero-glow" />
-        <div className="hero-content">
-          <div className="eyebrow"><span className="pulse" /> ЦИФРОВОЙ МАРКЕТПЛЕЙС</div>
-          <h1>Твой мир.<br /><span>Твои правила.</span></h1>
-          <p>Находи цифровые товары, открывай возможности<br className="desktop-only" /> и размещай собственные объявления.</p>
+      <section className="hero" id="about">
+        <div className="hero-copy">
+          <div className="eyebrow"><span className="live-dot" /> ТВОЙ ЛЕС. ТВОЯ КОМАНДА.</div>
+          <h1>Играй вместе.<br /><em>Расти вместе.</em></h1>
+          <p className="hero-text">Древень — место, где игроки становятся командой. Общайся, находи союзников и создавай свои игровые истории.</p>
           <div className="hero-actions">
-            <button className="primary" onClick={() => navigate("catalog")}>Открыть каталог ↗</button>
-            <button className="secondary" onClick={() => navigate("sell")}>＋ Разместить объявление</button>
+            <a className="primary-btn" href="#community">Войти в сообщество <span>↗</span></a>
+            <a className="secondary-btn" href="#features">Изучить возможности <span>↓</span></a>
           </div>
-          <div className="hero-stats">
-            <div><strong>{listings.filter(x => x.status === "approved").length}</strong><span>Товаров в каталоге</span></div>
-            <div><strong>{categories.length}</strong><span>Категорий</span></div>
-            <div><strong>24/7</strong><span>Цифровой мир</span></div>
-          </div>
+          <div className="hero-note"><span className="note-icon">✳</span><span><b>Сообщество начинается с тебя</b><small>Уважение, командная игра и новые знакомства</small></span></div>
         </div>
-        <div className="hero-art" aria-hidden="true">
-          <div className="orb orb-one" />
-          <div className="orb orb-two" />
-          <div className="orb-core">N</div>
-          <div className="floating-card card-one">✦ <span>Digital goods</span></div>
-          <div className="floating-card card-two">⌘ <span>Build something</span></div>
+        <div className="forest-art" aria-label="Иллюстрация леса" role="img">
+          <div className="moon" />
+          <div className="orb orb-one" /><div className="orb orb-two" /><div className="orb orb-three" />
+          <div className="tree tree-back tree-left"><i /><i /><i /><b /></div>
+          <div className="tree tree-back tree-right"><i /><i /><i /><b /></div>
+          <div className="tree tree-mid"><i /><i /><i /><i /><b /></div>
+          <div className="tree tree-front tree-front-left"><i /><i /><i /><b /></div>
+          <div className="tree tree-front tree-front-right"><i /><i /><i /><b /></div>
+          <div className="forest-caption"><span>01 / 03</span><span>ТИШИНА ПЕРЕД ПРИКЛЮЧЕНИЕМ</span></div>
         </div>
       </section>
 
-      {message && (
-        <div className="notice">
-          <span>{message}</span>
-          <button onClick={() => setMessage("")}>×</button>
+      <section className="ticker" aria-label="Принципы сообщества">
+        <span>ИГРАЙ</span><b>✳</b><span>ОБЩАЙСЯ</span><b>✳</b><span>СОЗДАВАЙ</span><b>✳</b><span>БУДЬ ЧАСТЬЮ ЛЕСА</span><b>✳</b>
+      </section>
+
+      <section className="features-section" id="features">
+        <div className="section-heading">
+          <div><div className="eyebrow">ЧТО ТЕБЯ ЖДЁТ</div><h2>Больше, чем <em>просто игра.</em></h2></div>
+          <p>Здесь важны не только победы, но и люди, с которыми ты проходишь путь.</p>
         </div>
-      )}
+        <div className="feature-grid">
+          {features.map((feature) => (
+            <article className="feature-card" key={feature.title}>
+              <div className="feature-icon">{feature.icon}</div>
+              <h3>{feature.title}</h3>
+              <p>{feature.text}</p>
+              <span className="card-arrow">↗</span>
+            </article>
+          ))}
+        </div>
+      </section>
 
-      <section className="content">
-        {tab === "catalog" && (
-          <>
-            <div className="section-heading">
-              <div><div className="eyebrow">ОТКРЫВАЙ НОВОЕ</div><h2>Каталог объявлений</h2><p>Найди то, что ищешь.</p></div>
-              <button className="primary" onClick={() => navigate("sell")}>＋ Разместить</button>
-            </div>
+      <section className="community-panel" id="community">
+        <div className="panel-symbol">♧</div>
+        <div><div className="eyebrow">ТВОЁ ПРИКЛЮЧЕНИЕ НАЧИНАЕТСЯ ЗДЕСЬ</div><h2>Встретимся <em>у костра.</em></h2><p>Мы готовим площадку Древень. Скоро здесь появятся вход в сообщество, игровой чат и инструменты модерации.</p></div>
+        <a className="primary-btn" href="#rules">Посмотреть правила <span>↗</span></a>
+      </section>
 
-            <div className="filters">
-              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="⌕  Поиск по названию и описанию..." />
-              <select value={category} onChange={e => setCategory(e.target.value)}>
-                <option>Все категории</option>
-                {categories.map(c => <option key={c}>{c}</option>)}
-              </select>
-            </div>
+      <section className="rules-strip" id="rules">
+        <div className="eyebrow">КОДЕКС ДРЕВНЯ</div>
+        <div className="rules-list"><span><b>01</b> Уважай игроков</span><span><b>02</b> Играй честно</span><span><b>03</b> Береги сообщество</span></div>
+      </section>
 
-            {visibleListings.filter(x => x.status === "approved").length === 0 ? (
-              <div className="empty">
-                <div className="empty-icon">◇</div>
-                <h3>Пока нет объявлений</h3>
-                <p>Попробуй другой поиск или размести первое объявление.</p>
-                <button className="secondary" onClick={() => navigate("sell")}>＋ Создать объявление</button>
-              </div>
-            ) : (
-              <div className="listing-grid">
-                {visibleListings.filter(x => x.status === "approved").map(item => (
-                  <article className="listing-card" key={item.id}>
-                    {item.image_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img className="listing-image" src={item.image_url} alt={item.title} />
-                    ) : <div className="listing-placeholder">NEXORA<span>✦</span></div>}
-                    <div className="listing-body">
-                      <span className="tag">{item.category}</span>
-                      <h3>{item.title}</h3>
-                      <p>{item.description}</p>
-                      <div className="listing-footer"><strong>{money(item.price)}</strong><span>Цифровой товар</span></div>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            )}
-          </>
-        )}
+      <footer className="footer">
+        <a className="brand" href="#"><span className="brand-mark">✦</span><span>ДРЕВЕНЬ<small>ИГРОВОЕ СООБЩЕСТВО</small></span></a>
+        <span>© {new Date().getFullYear()} Древень. Создаём сообщество вместе.</span>
+        <a href="#about">Наверх ↑</a>
+      </footer>
 
-        {tab === "sell" && (
-          <div className="form-panel">
-            <div className="eyebrow">ТВОЯ ВОЗМОЖНОСТЬ</div>
-            <h2>Новое объявление</h2>
-            <p>Заполни информацию. Объявление появится в каталоге после модерации.</p>
-            {!user ? (
-              <div className="empty"><h3>Нужно войти</h3><button className="primary" onClick={() => navigate("profile")}>Войти в аккаунт</button></div>
-            ) : (
-              <form onSubmit={createListing}>
-                <label>Название<input required maxLength={120} value={title} onChange={e => setTitle(e.target.value)} placeholder="Например, разработка Telegram-бота" /></label>
-                <label>Категория<select value={newCategory} onChange={e => setNewCategory(e.target.value)}>{categories.map(c => <option key={c}>{c}</option>)}</select></label>
-                <label>Описание<textarea required maxLength={5000} rows={5} value={description} onChange={e => setDescription(e.target.value)} placeholder="Расскажи о товаре или услуге..." /></label>
-                <label>Цена в тенге (KZT)<input required type="number" min="0" step="1" value={price} onChange={e => setPrice(e.target.value)} /></label>
-                <label>Ссылка на изображение (необязательно)<input type="url" value={imageUrl} onChange={e => setImageUrl(e.target.value)} placeholder="https://example.com/image.jpg" /></label>
-                <button className="primary full" disabled={busy}>{busy ? "Отправка..." : "Отправить на модерацию →"}</button>
-              </form>
-            )}
-          </div>
-        )}
-
-        {tab === "my" && (
-          <>
-            <div className="section-heading"><div><div className="eyebrow">ТВОИ ТОВАРЫ</div><h2>Мои объявления</h2></div><button className="primary" onClick={() => navigate("sell")}>＋ Создать</button></div>
-            {!user ? <div className="empty"><h3>Войди в аккаунт</h3><button className="primary" onClick={() => navigate("profile")}>Войти</button></div> :
-              myListings.length === 0 ? <div className="empty"><div className="empty-icon">◇</div><h3>У тебя пока нет объявлений</h3><button className="secondary" onClick={() => navigate("sell")}>Создать первое</button></div> :
-              <div className="listing-grid">{myListings.map(item => <article className="listing-card" key={item.id}><div className="listing-placeholder">{item.category}<span>✦</span></div><div className="listing-body"><span className={"status " + item.status}>{item.status === "pending" ? "На модерации" : item.status === "approved" ? "Опубликовано" : "Отклонено"}</span><h3>{item.title}</h3><p>{item.description}</p><div className="listing-footer"><strong>{money(item.price)}</strong><span>{item.category}</span></div></div></article>)}</div>}
-          </>
-        )}
-
-        {tab === "profile" && (
-          <div className="form-panel">
-            <div className="eyebrow">ТВОЙ АККАУНТ</div>
-            <h2>{user ? "Профиль" : authMode === "login" ? "С возвращением" : "Создай аккаунт"}</h2>
-            {!user ? (
-              <>
-                <p>{authMode === "login" ? "Войди в свой цифровой мир." : "Присоединяйся к NEXORA."}</p>
-                <form onSubmit={handleAuth}>
-                  <label>Email<input type="email" required value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" autoComplete="email" /></label>
-                  <label>Пароль<input type="password" required minLength={6} value={password} onChange={e => setPassword(e.target.value)} placeholder="Не менее 6 символов" autoComplete={authMode === "login" ? "current-password" : "new-password"} /></label>
-                  <button className="primary full" disabled={busy}>{busy ? "Подожди..." : authMode === "login" ? "Войти →" : "Зарегистрироваться →"}</button>
-                </form>
-                <button className="text-button" onClick={() => setAuthMode(authMode === "login" ? "register" : "login")}>{authMode === "login" ? "Нет аккаунта? Регистрация" : "Уже есть аккаунт? Войти"}</button>
-              </>
-            ) : (
-              <div className="account-card">
-                <div className="avatar">{isOwner ? "N" : (user.email?.[0] ?? "U").toUpperCase()}</div>
-                <h3>{isOwner ? "Основатель NEXORA" : "Пользователь NEXORA"}</h3>
-                <p>{user.email}</p>
-                {isOwner && <span className="owner-badge">✦ OWNER</span>}
-                <button className="secondary full" onClick={() => navigate("my")}>Мои объявления</button>
-                {isOwner && <button className="primary full" onClick={() => navigate("admin")}>Открыть панель OWNER ↗</button>}
-                <button className="text-button" onClick={handleLogout}>Выйти из аккаунта</button>
-              </div>
-            )}
-          </div>
-        )}
-
-        {tab === "purchases" && (
-          <div className="empty"><div className="empty-icon">◇</div><h3>Мои покупки</h3><p>Покупки появятся здесь после подключения безопасной системы заказов и оплаты.</p></div>
-        )}
-
-        {tab === "admin" && (
-          !isOwner || user?.id !== OWNER_ID ? (
-            <div className="empty"><h3>Доступ запрещён</h3><p>Эта страница предназначена только для основателя.</p><button className="secondary" onClick={() => navigate("catalog")}>В каталог</button></div>
-          ) : (
-            <>
-              <div className="owner-header">
-                <div className="eyebrow">NEXORA CONTROL CENTER</div>
-                <h2>Панель основателя <span className="owner-badge">✦ OWNER</span></h2>
-                <p>Управление маркетплейсом и модерация объявлений.</p>
-              </div>
-              <div className="admin-stats">
-                <div><span>Всего объявлений</span><strong>{listings.length}</strong></div>
-                <div><span>На модерации</span><strong>{adminListings.length}</strong></div>
-                <div><span>Опубликовано</span><strong>{listings.filter(x => x.status === "approved").length}</strong></div>
-              </div>
-              <div className="section-heading"><div><h2>Очередь модерации</h2><p>Проверь объявление перед публикацией.</p></div><button className="secondary" onClick={() => void loadAdminListings()}>↻ Обновить</button></div>
-
-          {adminLoading ? (
-            <div className="empty">Загружаем объявления...</div>
-          ) : adminListings.length === 0 ? (
-            <div className="empty">
-              <div className="empty-icon">✓</div>
-              <h3>Очередь пуста</h3>
-              <p>Новых объявлений на модерацию пока нет.</p>
-            </div>
-          ) : (
-            <div className="listing-grid">
-              {adminListings.map((item) => (
-                <article className="listing-card" key={item.id}>
-                  {item.image_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      className="listing-image"
-                      src={item.image_url}
-                      alt={item.title}
-                    />
-                  ) : (
-                    <div className="listing-placeholder">
-                      NEXORA<span>✦</span>
-                    </div>
-                  )}
-
-                  <div className="listing-body">
-                    <span className="status pending">На модерации</span>
-                    <h3>{item.title}</h3>
-                    <p>{item.description}</p>
-                    <div className="listing-footer">
-                      <strong>{money(item.price)}</strong>
-                      <span>{item.category}</span>
-                    </div>
-
-                    <div className="admin-actions">
-                      <button
-                        className="primary"
-                        disabled={busy}
-                        onClick={() => void moderateListing(item.id, "approved")}
-                      >
-                        ✓ Опубликовать
-                      </button>
-                      <button
-                        className="danger"
-                        disabled={busy}
-                        onClick={() => void moderateListing(item.id, "rejected")}
-                      >
-                        ✕ Отклонить
-                      </button>
-                    </div>
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-        </>
-      )
-    )}
-  </section>
-
-  <footer className="footer">
-    <div className="brand"><span className="brand-icon">N</span> NEXORA.</div>
-    <p>Твой мир. Твои правила.</p>
-    <span>© {new Date().getFullYear()} NEXORA</span>
-  </footer>
-
-  <nav className="mobile-nav">
-    <button onClick={() => navigate("catalog")}>⌂<span>Каталог</span></button>
-    <button onClick={() => navigate("sell")}>＋<span>Продать</span></button>
-    <button onClick={() => navigate("my")}>▤<span>Мои товары</span></button>
-    <button onClick={() => navigate("profile")}>◎<span>Профиль</span></button>
-    {isOwner && <button onClick={() => navigate("admin")}>◈<span>OWNER</span></button>}
-  </nav>
-
-  <style jsx>{`
-    * { box-sizing: border-box; }
-    .site { min-height: 100vh; background: #0b0b12; color: #f7f5ff; }
-    .topbar { height: 76px; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 0 5%; border-bottom: 1px solid #242236; background: rgba(11,11,18,.95); position: sticky; top: 0; z-index: 10; }
-    button, input, textarea, select { font: inherit; }
-    button { cursor: pointer; }
-    button:disabled { opacity: .6; cursor: not-allowed; }
-    .brand { display: flex; align-items: center; gap: 10px; border: 0; background: transparent; color: white; font-weight: 900; letter-spacing: 2px; }
-    .brand-icon, .logo-mark { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 12px; background: linear-gradient(135deg,#8b5cf6,#ec4899); color: white; font-weight: 900; }
-    .brand-dot { color: #c4a7ff; }
-    .desktop-nav { display: flex; align-items: center; gap: 8px; }
-    .desktop-nav button, .profile-button { border: 1px solid transparent; background: transparent; color: #aaa6bd; padding: 10px 13px; border-radius: 12px; }
-    .desktop-nav button:hover, .desktop-nav button.active { background: #1b1829; color: white; }
-    .desktop-nav .owner-nav, .owner-badge { color: #d9c5ff; border: 1px solid #6c4bb5; background: #25183d; border-radius: 10px; padding: 8px 12px; }
-    .profile-button { background: #211b35; color: white; border-color: #44345f; }
-    .hero { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 40px; min-height: 510px; padding: 70px 8%; overflow: hidden; background: radial-gradient(ellipse at 15% 20%,#251545 0,transparent 45%), radial-gradient(ellipse at 90% 70%,#172647 0,transparent 42%),#0b0b12; }
-    .hero-content { position: relative; z-index: 1; max-width: 650px; }
-    .eyebrow { color: #b99aff; font-size: 11px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; }
-    .pulse { display: inline-block; width: 7px; height: 7px; margin-right: 8px; border-radius: 50%; background: #a78bfa; box-shadow: 0 0 12px #a78bfa; }
-    .hero h1 { margin: 22px 0; font-size: clamp(40px,6vw,70px); line-height: 1.05; letter-spacing: -2px; }
-    .hero h1 span { color: #b69aff; }
-    .hero p, .section-heading p, .form-panel > p, .owner-header p { color: #aaa6bd; line-height: 1.7; }
-    .hero-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 28px; }
-    .primary, .secondary, .danger { border: 0; border-radius: 12px; padding: 12px 17px; font-weight: 750; transition: transform .2s, opacity .2s; }
-    .primary:hover, .secondary:hover, .danger:hover { transform: translateY(-1px); }
-    .primary { background: linear-gradient(135deg,#8b5cf6,#6d4aff); color: white; }
-    .secondary { border: 1px solid #39334f; background: #171522; color: #eee9ff; }
-    .danger { background: #4b1e30; border: 1px solid #8d3453; color: #ffc3d5; }
-    .hero-stats { display: flex; flex-wrap: wrap; gap: 36px; margin-top: 42px; }
-    .hero-stats div, .admin-stats div { display: grid; gap: 5px; }
-    .hero-stats strong { font-size: 22px; }
-    .hero-stats span, .admin-stats span { color: #9994ad; font-size: 12px; }
-    .hero-art { position: relative; width: 320px; height: 320px; flex-shrink: 0; }
-    .orb { position: absolute; border: 1px solid #7d5bd8; border-radius: 50%; inset: 15px; box-shadow: 0 0 50px #6239a533; }
-    .orb-two { inset: 48px; border-color: #4373c8; transform: rotate(45deg) scaleX(.7); }
-    .orb-core { position: absolute; inset: 95px; display: grid; place-items: center; border-radius: 32px; background: linear-gradient(135deg,#8b5cf6,#ec4899); font-size: 70px; font-weight: 950; box-shadow: 0 0 70px #8b5cf655; }
-    .floating-card { position: absolute; padding: 12px 16px; border: 1px solid #3a3155; border-radius: 13px; background: #171522; color: #b99aff; box-shadow: 0 10px 35px #0005; }
-    .floating-card span { color: white; font-size: 12px; }
-    .card-one { top: 30px; right: -20px; }
-    .card-two { bottom: 35px; left: -30px; }
-    .notice { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 20px auto 0; padding: 13px 18px; max-width: 1100px; border: 1px solid #51416d; border-radius: 12px; background: #1b1729; color: #e8ddff; }
-    .notice button { border: 0; background: transparent; color: white; font-size: 22px; }
-    .content { max-width: 1200px; min-height: 300px; margin: auto; padding: 60px 5% 90px; }
-    .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 25px; }
-    h2 { margin: 10px 0; font-size: clamp(25px,3vw,34px); }
-    .filters { display: flex; gap: 12px; margin: 25px 0; }
-    input, textarea, select { width: 100%; padding: 13px 14px; border: 1px solid #302b43; border-radius: 11px; outline: none; background: #12111b; color: white; }
-    input:focus, textarea:focus, select:focus { border-color: #8b5cf6; }
-    .filters input { flex: 1; }
-    .filters select { max-width: 230px; }
-    .empty { display: grid; justify-items: center; gap: 12px; padding: 60px 20px; border: 1px dashed #302b43; border-radius: 18px; text-align: center; }
-    .empty h3, .empty p { margin: 0; }
-    .empty p { color: #9994ad; }
-    .empty-icon { color: #a78bfa; font-size: 40px; }
-    .listing-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 20px; }
-    .listing-card { overflow: hidden; border: 1px solid #2d2840; border-radius: 18px; background: #12111b; }
-    .listing-card:hover { border-color: #6750a4; }
-    .listing-image, .listing-placeholder { display: grid; width: 100%; height: 180px; object-fit: cover; place-items: center; background: linear-gradient(135deg,#211b40,#12182b); }
-    .listing-placeholder { color: #b99aff; font-size: 24px; font-weight: 900; letter-spacing: 4px; }
-    .listing-placeholder span { margin-left: 5px; color: #ec4899; }
-    .listing-body { padding: 18px; }
-    .tag, .status { display: inline-block; padding: 5px 9px; border-radius: 7px; background: #211b35; color: #c7b3ff; font-size: 11px; }
-    .status.approved { background: #153526; color: #91e9b6; }
-    .status.rejected { background: #431c2b; color: #ffb1c4; }
-    .status.pending { background: #332817; color: #ffd89a; }
-    .listing-body h3 { margin: 12px 0 8px; overflow-wrap: anywhere; }
-    .listing-body p { min-height: 42px; color: #aaa6bd; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
-    .listing-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 18px; padding-top: 14px; border-top: 1px solid #292538; }
-    .listing-footer strong { color: #c9b6ff; }
-    .listing-footer span { color: #89849f; font-size: 11px; }
-    .form-panel { max-width: 650px; margin: 0 auto; padding: 30px; border: 1px solid #302b43; border-radius: 20px; background: #12111b; }
-    .form-panel form { display: grid; gap: 18px; margin-top: 25px; }
-    label { display: grid; gap: 8px; color: #d7d2e8; font-size: 13px; font-weight: 700; }
-    .full { width: 100%; }
-    .text-button { display: block; margin: 18px auto 0; border: 0; background: transparent; color: #b99aff; }
-    .account-card { display: grid; justify-items: center; gap: 12px; padding: 25px 0 0; text-align: center; }
-    .account-card p { color: #aaa6bd; overflow-wrap: anywhere; }
-    .avatar { display: grid; place-items: center; width: 70px; height: 70px; border-radius: 24px; background: linear-gradient(135deg,#8b5cf6,#ec4899); font-size: 28px; font-weight: 900; }
-    .account-card .full { margin-top: 8px; }
-    .owner-header { margin-bottom: 25px; }
-    .owner-header h2 { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
-    .admin-stats { display: grid; grid-template-columns: repeat(3,1fr); gap: 15px; margin: 25px 0 45px; }
-    .admin-stats div { padding: 22px; border: 1px solid #302b43; border-radius: 14px; background: #12111b; }
-    .admin-stats strong { font-size: 28px; }
-    .admin-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
-    .footer { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 28px 5% 90px; border-top: 1px solid #242236; color: #aaa6bd; }
-    .footer p { margin: 0; }
-    .mobile-nav { display: none; }
-    @media (max-width: 900px) {
-      .desktop-nav { gap: 0; }
-      .desktop-nav button { padding: 9px 7px; font-size: 12px; }
-      .hero { padding: 55px 6%; }
-      .hero-art { width: 230px; height: 230px; }
-      .orb-core { inset: 68px; font-size: 48px; border-radius: 24px; }
-      .floating-card { padding: 8px; font-size: 11px; }
-      .listing-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
-    }
-    @media (max-width: 650px) {
-      .topbar { height: 64px; padding: 0 4%; }
-      .desktop-nav { display: none; }
-      .hero { min-height: auto; padding: 55px 6% 40px; }
-      .hero-art { display: none; }
-      .hero h1 { font-size: 44px; }
-      .hero-stats { gap: 22px; }
-      .content { padding: 40px 4% 100px; }
-      .section-heading { align-items: flex-start; }
-      .section-heading > .primary { padding: 10px; font-size: 12px; }
-      .filters { flex-direction: column; }
-      .filters select { max-width: none; }
-      .listing-grid { grid-template-columns: 1fr; }
-      .form-panel { padding: 22px 17px; }
-      .admin-stats { grid-template-columns: 1fr; }
-      .footer { flex-direction: column; align-items: flex-start; padding-bottom: 100px; }
-      .mobile-nav { position: fixed; z-index: 20; right: 10px; bottom: 10px; left: 10px; display: flex; justify-content: space-around; gap: 4px; padding: 10px 5px; border: 1px solid #38304e; border-radius: 17px; background: rgba(18,17,27,.96); backdrop-filter: blur(16px); }
-      .mobile-nav button { display: grid; justify-items: center; gap: 4px; border: 0; background: transparent; color: #c7b3ff; font-size: 19px; }
-      .mobile-nav span { color: #aaa6bd; font-size: 9px; }
-      .desktop-only { display: none; }
-    }
-  `}</style>
-</main>
-
-);
-    }
+      <style jsx global>{`
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap');
+        :root{--bg:#0a100d;--panel:#111a14;--green:#b8e986;--muted:#a0aea3;--line:#29352c;--white:#f0f4ed}
+        *{box-sizing:border-box}html{scroll-behavior:smooth}body{background:var(--bg);color:var(--white);font-family:'DM Sans',sans-serif}
+        a{color:inherit;text-decoration:none}.site-shell{max-width:1440px;margin:0 auto;padding:0 6.2%}.topbar{height:92px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);gap:24px}
+        .brand{display:flex;align-items:center;gap:10px;font-family:Manrope,sans-serif;font-size:15px;font-weight:800;letter-spacing:2px}.brand-mark{display:grid;place-items:center;width:37px;height:37px;border:1px solid #526b4d;border-radius:12px;color:var(--green);font-size:22px}.brand small{display:block;font:9px 'DM Sans',sans-serif;color:var(--muted);letter-spacing:1.6px;margin-top:3px}
+        .nav{display:flex;gap:32px;color:#c0cbc0;font-size:13px}.nav a:hover,.footer>a:last-child:hover{color:var(--green)}.top-cta{border:1px solid #5a6b58;padding:12px 16px;border-radius:7px;font-size:12px;font-weight:700}.top-cta span,.primary-btn span{margin-left:12px;color:var(--green)}.menu-toggle{display:none}
+        .hero{display:grid;grid-template-columns:1fr 0.9fr;gap:4%;align-items:center;padding:78px 0 72px;min-height:600px}.eyebrow{font-size:10px;letter-spacing:2.1px;font-weight:700;color:var(--green);display:flex;align-items:center;gap:9px}.live-dot{width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 12px #b8e986}
+        h1,h2,h3,p{margin-top:0}h1,h2{font-family:Manrope,sans-serif;letter-spacing:-2.7px}h1{font-size:clamp(48px,6.5vw,84px);line-height:1.04;margin:25px 0 22px;font-weight:700}h1 em,h2 em{font-style:normal;color:var(--green)}.hero-text{font-size:15px;line-height:1.85;color:var(--muted);max-width:475px;margin-bottom:30px}.hero-actions{display:flex;align-items:center;gap:13px;flex-wrap:wrap}.primary-btn,.secondary-btn{display:inline-flex;align-items:center;justify-content:center;padding:15px 18px;border-radius:7px;font-size:12px;font-weight:700}.primary-btn{background:var(--green);color:#172015}.primary-btn span{color:#172015}.secondary-btn{border:1px solid var(--line);color:#d7dfd6}.hero-note{display:flex;align-items:center;gap:12px;margin-top:42px}.note-icon{display:grid;place-items:center;width:38px;height:38px;border:1px solid var(--line);border-radius:50%;color:var(--green)}.hero-note b,.hero-note small{display:block}.hero-note b{font-size:11px}.hero-note small{font-size:10px;color:var(--muted);margin-top:5px}
+        .forest-art{height:435px;position:relative;overflow:hidden;border:1px solid #27392b;border-radius:12px;background:radial-gradient(ellipse at 50% 36%,#294b31 0%,#172b20 37%,#101a14 75%)}.forest-art:after{content:"";position:absolute;inset:0;background:linear-gradient(0deg,#0a100d 0%,transparent 40%,#0a100d12 100%);pointer-events:none}.moon{position:absolute;top:60px;left:48%;width:83px;height:83px;border-radius:50%;background:#d7edbd;box-shadow:0 0 65px #b8e98655}.orb{position:absolute;width:4px;height:4px;border-radius:50%;background:#d5edb8;box-shadow:0 0 10px #d5edb8}.orb-one{top:70px;left:23%}.orb-two{top:130px;right:20%}.orb-three{top:45%;left:65%}
+        .tree{position:absolute;bottom:15px;width:0;height:0;border-left:72px solid transparent;border-right:72px solid transparent;border-bottom:240px solid #24432c;filter:drop-shadow(0 0 18px #0004)}.tree i{position:absolute;display:block;width:0;height:0;border-left:60px solid transparent;border-right:60px solid transparent;border-bottom:95px solid #2d5436;left:-60px;top:35px}.tree i:nth-child(2){top:75px;left:-52px;border-left-width:52px;border-right-width:52px;border-bottom-width:90px}.tree i:nth-child(3){top:116px;left:-42px;border-left-width:42px;border-right-width:42px;border-bottom-width:75px}.tree b{position:absolute;width:13px;height:52px;background:#4c3f2b;top:235px;left:-6px}.tree-back{transform:scale(.72);transform-origin:bottom;opacity:.8;border-bottom-color:#1b3422}.tree-left{left:4%;bottom:7px}.tree-right{right:1%;bottom:2px;transform:scale(.85)}.tree-mid{left:43%;bottom:8px;transform:scale(1.12);border-bottom-color:#345b38}.tree-front{border-bottom-color:#13271a;transform:scale(1.1)}.tree-front-left{left:21%;bottom:-10px}.tree-front-right{right:15%;bottom:-12px;transform:scale(1.2)}.forest-caption{position:absolute;z-index:2;bottom:20px;left:20px;right:20px;display:flex;justify-content:space-between;color:#c2d2bc;font-size:9px;letter-spacing:1.3px}
+        .ticker{display:flex;align-items:center;justify-content:space-around;gap:14px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:23px 0;color:#d6dfd3;font-size:10px;letter-spacing:2px;font-weight:700}.ticker b{color:var(--green);font-size:14px}
+        .features-section{padding:100px 0 95px}.section-heading{display:flex;justify-content:space-between;align-items:end;gap:30px;margin-bottom:38px}.section-heading h2,.community-panel h2{font-size:clamp(30px,4vw,47px);line-height:1.12;margin:15px 0 0}.section-heading>p{max-width:330px;color:var(--muted);font-size:13px;line-height:1.8;margin:0}.feature-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:15px}.feature-card{position:relative;background:linear-gradient(145deg,#141f17,#0e1611);border:1px solid var(--line);border-radius:10px;padding:27px;min-height:220px}.feature-icon{font-size:23px;margin-bottom:24px}.feature-card h3{font-family:Manrope,sans-serif;font-size:16px;margin-bottom:11px}.feature-card p{color:var(--muted);font-size:12px;line-height:1.8;max-width:290px;margin-bottom:20px}.card-arrow{position:absolute;right:24px;top:25px;color:#6e8667}
+        .community-panel{display:grid;grid-template-columns:70px 1fr auto;gap:22px;align-items:center;background:#17251a;border:1px solid #304831;border-radius:12px;padding:35px 38px}.panel-symbol{display:grid;place-items:center;width:60px;height:60px;border-radius:18px;background:#233c28;color:var(--green);font-size:34px}.community-panel h2{font-size:34px;margin:12px 0}.community-panel p{font-size:12px;line-height:1.8;color:var(--muted);max-width:560px;margin:0}.community-panel .primary-btn{white-space:nowrap}
+        .rules-strip{padding:70px 0;border-bottom:1px solid var(--line)}.rules-list{display:flex;gap:clamp(18px,6vw,85px);flex-wrap:wrap;margin-top:24px}.rules-list span{font-size:13px}.rules-list b{font-size:10px;color:var(--green);margin-right:10px}
+        .footer{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:28px 0 32px;color:var(--muted);font-size:10px}.footer .brand{color:var(--white)}.footer>a:last-child{color:#d9e1d7}
+        @media(max-width:850px){.site-shell{padding:0 5%}.topbar{height:78px}.nav{gap:16px}.top-cta{display:none}.hero{grid-template-columns:1fr;gap:38px;padding:58px 0}.forest-art{height:370px}.section-heading{align-items:start;flex-direction:column}.community-panel{grid-template-columns:55px 1fr}.community-panel .primary-btn{grid-column:2;justify-self:start}.panel-symbol{width:50px;height:50px}.footer{flex-wrap:wrap}}
+        @media(max-width:600px){.topbar{position:relative}.menu-toggle{display:block;margin-left:auto;background:transparent;color:var(--white);border:1px solid var(--line);border-radius:6px;padding:9px 12px;font-size:12px}.nav{display:none;position:absolute;z-index:5;top:68px;left:0;right:0;padding:18px;background:#111a14;border:1px solid var(--line);border-radius:8px;flex-direction:column}.nav-open{display:flex}.brand{font-size:13px}.brand-mark{width:32px;height:32px}h1{font-size:53px}.hero{padding-top:45px}.forest-art{height:320px}.tree{transform:scale(.82);transform-origin:bottom}.tree-right{transform:scale(.7)}.tree-mid{transform:scale(.85)}.tree-front-left{transform:scale(.8)}.tree-front-right{transform:scale(.85)}.ticker{flex-wrap:wrap;justify-content:center;font-size:9px;padding:17px 0}.ticker span:last-of-type,.ticker b:last-child{display:none}.features-section{padding:70px 0}.feature-grid{grid-template-columns:1fr}.feature-card{min-height:180px}.feature-icon{margin-bottom:17px}.community-panel{padding:24px;grid-template-columns:1fr}.community-panel .primary-btn{grid-column:1}.community-panel h2{font-size:30px}.rules-strip{padding:50px 0}.rules-list{flex-direction:column;gap:16px}.footer{align-items:flex-start;flex-direction:column}.footer .brand{margin-bottom:4px}}
+      `}</style>
+    </main>
+  );
+}
