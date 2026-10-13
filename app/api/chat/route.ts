@@ -68,7 +68,7 @@ export async function POST(request: NextRequest) {
   }
 
   const text = typeof body.text === "string" ? body.text.trim() : "";
-  const displayName =
+  let displayName =
     typeof body.displayName === "string"
       ? body.displayName.replace(/[\u0000-\u001f<>]/g, "").trim().slice(0, 80)
       : "";
@@ -89,6 +89,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Не удалось подтвердить вход через Telegram. Перезапусти Mini App." }, { status: 401 });
     }
     telegramUserId = user.id;
+    displayName = user.username ? `@${user.username}` : [user.first_name, user.last_name].filter(Boolean).join(" ").slice(0, 80);
+    if (!displayName) displayName = "Участник Telegram";
   }
 
   const { data: inserted, error: insertError } = await supabase
